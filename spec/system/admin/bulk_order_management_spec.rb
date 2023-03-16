@@ -26,17 +26,27 @@ describe '
     context "displaying the list of line items" do
       let!(:o1) {
         create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
-                                        completed_at: Time.zone.now )
+                                        completed_at: Time.zone.parse('2022-05-05 15:30:45'))
       }
       let!(:o2) {
         create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
-                                        completed_at: Time.zone.now )
+                                        completed_at: Time.zone.parse('2022-04-26 15:10:45'))
+      }
+      let!(:o21) {
+        create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
+                                        completed_at: Time.zone.parse('2022-08-04 09:10:45'))
+      }
+      let!(:o22) {
+        create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
+                                        completed_at: Time.zone.parse('2022-06-07 09:10:45'))
       }
       let!(:o3) { create(:order_with_distributor, state: 'address', completed_at: nil ) }
       let!(:o4) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
       let!(:o5) { create(:order_with_distributor, state: 'complete', completed_at: Time.zone.now ) }
       let!(:li1) { create(:line_item_with_shipment, order: o1) }
       let!(:li2) { create(:line_item_with_shipment, order: o2) }
+      let!(:li21) { create(:line_item_with_shipment, order: o21) }
+      let!(:li22) { create(:line_item_with_shipment, order: o22) }
       let!(:li3) { create(:line_item, order: o3 ) }
       let!(:li4) { create(:line_item_with_shipment, order: o4) }
       let!(:li5) { create(:line_item_with_shipment, order: o5) }
@@ -56,6 +66,13 @@ describe '
         expect(page).to have_selector "tr#li_#{li2.id}"
         expect(page).to have_no_selector "tr#li_#{li4.id}"
         expect(page).to have_no_selector "tr#li_#{li5.id}"
+      end
+
+      it "orders by completion date" do
+        find("a", text: 'COMPLETED AT').click # sets ascending ordering
+        expect(page).to have_content(/#{li2.product.name}.*#{li1.product.name}.*#{li22.product.name}.*#{li21.product.name}/m)
+        find("a", text: 'COMPLETED AT').click # sets descending ordering
+        expect(page).to have_content(/#{li21.product.name}.*#{li22.product.name}.*#{li1.product.name}.*#{li2.product.name}/m)
       end
     end
 
@@ -107,6 +124,81 @@ describe '
         expect(page).to have_button("Last »", disabled: true)
         select2_select "100 per page", from: "autogen4" # should display all 20 line items
         expect(page).to have_content "20 Results found. Viewing 1 to 20."
+      end
+    end
+
+    context "searching" do
+      let!(:a1) { create(:address, phone: "1234567890", firstname: "Willy", lastname: "Wonka") }
+      let!(:o1) {
+        create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
+                                        completed_at: Time.zone.now, bill_address: a1)
+      }
+      let!(:o2) {
+        create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
+                                        completed_at: Time.zone.now )
+      }
+      let!(:s1) { create(:supplier_enterprise) }
+      let!(:s2) { create(:supplier_enterprise) }
+      let!(:li1) { create(:line_item_with_shipment, order: o1, product: create(:product, supplier: s1)) }
+      let!(:li2) { create(:line_item_with_shipment, order: o2, product: create(:product, supplier: s2)) }
+      let!(:li3) { create(:line_item_with_shipment, order: o2, product: create(:product, supplier: s2)) }
+
+      before :each do
+        visit_bulk_order_management
+      end
+
+      it "by product name" do
+        fill_in "quick_filter", with: li1.product.name
+        page.find('.filter-actions .button.icon-search').click
+
+        expect_line_items_results [li1], [li2, li3]
+      end
+
+      it "by supplier name" do
+        fill_in "quick_filter", with: li1.product.supplier.name
+        page.find('.filter-actions .button.icon-search').click
+
+        expect_line_items_results [li1], [li2, li3]
+      end
+
+      it "by email" do
+        fill_in "quick_filter", with: o1.email
+        page.find('.filter-actions .button.icon-search').click
+
+        expect_line_items_results [li1], [li2, li3]
+      end
+
+      it "by order number" do
+        fill_in "quick_filter", with: o1.number
+        page.find('.filter-actions .button.icon-search').click
+
+        expect_line_items_results [li1], [li2, li3]
+      end
+
+      it "by phone number" do
+        fill_in "quick_filter", with: o1.bill_address.phone
+        page.find('.filter-actions .button.icon-search').click
+
+        expect_line_items_results [li1], [li2, li3]
+      end
+
+      it "by distributor name" do
+        fill_in "quick_filter", with: o1.distributor.name
+        page.find('.filter-actions .button.icon-search').click
+
+        expect_line_items_results [li1], [li2, li3]
+      end
+
+      it "by customer name" do
+        fill_in "quick_filter", with: o1.bill_address.firstname
+        page.find('.filter-actions .button.icon-search').click
+
+        expect_line_items_results [li1], [li2, li3]
+
+        fill_in "quick_filter", with: o1.bill_address.lastname
+        page.find('.filter-actions .button.icon-search').click
+
+        expect_line_items_results [li1], [li2, li3]
       end
     end
 
@@ -585,38 +677,6 @@ describe '
       end
     end
 
-    context "using quick search" do
-      let!(:o1) {
-        create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
-                                        completed_at: Time.zone.now )
-      }
-      let!(:o2) {
-        create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
-                                        completed_at: Time.zone.now )
-      }
-      let!(:o3) {
-        create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
-                                        completed_at: Time.zone.now )
-      }
-      let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
-      let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
-      let!(:li3) { create(:line_item_with_shipment, order: o3 ) }
-
-      before :each do
-        visit_bulk_order_management
-      end
-
-      it "filters line items based on their attributes and the contents of the quick search input" do
-        expect(page).to have_selector "tr#li_#{li1.id}"
-        expect(page).to have_selector "tr#li_#{li2.id}"
-        expect(page).to have_selector "tr#li_#{li3.id}"
-        fill_in "quick_search", with: o1.email
-        expect(page).to have_selector "tr#li_#{li1.id}"
-        expect(page).to have_no_selector "tr#li_#{li2.id}"
-        expect(page).to have_no_selector "tr#li_#{li3.id}"
-      end
-    end
-
     context "using date restriction controls" do
       let!(:o1) {
         create(:order_with_distributor, state: 'complete', shipment_state: 'ready',
@@ -720,6 +780,7 @@ describe '
                                         completed_at: Time.zone.now )
       }
       let!(:li1) { create(:line_item_with_shipment, order: o1 ) }
+      let!(:li11) { create(:line_item_with_shipment, order: o1 ) }
       let!(:li2) { create(:line_item_with_shipment, order: o2 ) }
 
       before :each do
@@ -753,60 +814,58 @@ describe '
       end
 
       context "performing actions" do
-        it "deletes selected items" do
-          expect(page).to have_selector "tr#li_#{li1.id}"
-          expect(page).to have_selector "tr#li_#{li2.id}"
-          within("tr#li_#{li2.id} td.bulk") do
-            check "bulk"
-          end
-
-          find("div#bulk-actions-dropdown").click
-          find("div#bulk-actions-dropdown div.menu_item", text: "Delete Selected" ).click
-
-          expect(page).to have_content "This operation will result in one or more empty orders, which will be cancelled. Do you wish to proceed?"
-
-          expect do
-            within(".modal") do
-              check("send_cancellation_email")
-              click_on("OK")
-            end
+        context "deletes selected items" do
+          it "displays a confirmation dialog when deleting one or more items leads to order cancelation" do
             expect(page).to have_selector "tr#li_#{li1.id}"
-            expect(page).to have_no_selector "tr#li_#{li2.id}"
-            expect(o2.reload.state).to eq("canceled")
-          end.to have_enqueued_mail(Spree::OrderMailer, :cancel_email)
-        end
-      end
+            expect(page).to have_selector "tr#li_#{li11.id}"
+            within("tr#li_#{li1.id} td.bulk") do
+              check "bulk"
+            end
+            within("tr#li_#{li11.id} td.bulk") do
+              check "bulk"
+            end
 
-      context "when a filter has been applied" do
-        it "only toggles checkboxes which are in filteredLineItems" do
-          fill_in "quick_search", with: o1.number
-          expect(page).to have_no_selector "tr#li_#{li2.id}"
-          check "toggle_bulk"
-          fill_in "quick_search", with: ''
-          wait_until { request_monitor_finished 'LineItemsCtrl' }
-          expect(find("tr#li_#{li1.id} input[type='checkbox'][name='bulk']").checked?).to be true
-          expect(find("tr#li_#{li2.id} input[type='checkbox'][name='bulk']").checked?).to be false
-          expect(find("input[type='checkbox'][name='toggle_bulk']").checked?).to be false
-        end
+            find("div#bulk-actions-dropdown").click
+            find("div#bulk-actions-dropdown div.menu_item", text: "Delete Selected" ).click
 
-        it "only applies the delete action to filteredLineItems" do
-          check "toggle_bulk"
-          fill_in "quick_search", with: o1.number
-          expect(page).to have_no_selector "tr#li_#{li2.id}"
+            expect(page).to have_content "This operation will result in one or more empty orders, which will be cancelled. Do you wish to proceed?"
 
-          find("div#bulk-actions-dropdown").click
-          find("div#bulk-actions-dropdown div.menu_item", text: "Delete Selected" ).click
-
-          within ".modal" do
-            click_on("OK")
+            expect do
+              within(".modal") do
+                check("send_cancellation_email")
+                click_on("OK")
+              end
+              # order 1 should be canceled
+              expect(page).to have_no_selector "tr#li_#{li1.id}"
+              expect(page).to have_no_selector "tr#li_#{li11.id}"
+              expect(o1.reload.state).to eq("canceled")
+              # order 2 should not be canceled
+              expect(page).to have_selector "tr#li_#{li2.id}"
+              expect(o2.reload.state).to eq("complete")
+            end.to have_enqueued_mail(Spree::OrderMailer, :cancel_email)
           end
 
-          expect(page).to have_no_selector "tr#li_#{li1.id}"
-          expect(page).to have_selector "#quick_search"
-          fill_in "quick_search", with: ''
-          wait_until { request_monitor_finished 'LineItemsCtrl' }
-          expect(page).to have_selector "tr#li_#{li2.id}"
-          expect(page).to have_no_selector "tr#li_#{li1.id}"
+          it "deletes one line item should show modal confirmation about this line item deletion and not about order cancelation" do
+            expect(page).to have_selector "tr#li_#{li1.id}"
+            within("tr#li_#{li1.id} td.bulk") do
+              check "bulk"
+            end
+
+            find("div#bulk-actions-dropdown").click
+            find("div#bulk-actions-dropdown div.menu_item", text: "Delete Selected" ).click
+
+            within ".modal" do
+              expect(page).to have_content "This will delete one line item from the order. Are you sure you want to proceed?"
+              click_on "OK"
+            end
+
+            expect(page).to have_content "Loading orders"
+
+            expect(page).to have_no_selector ".modal"
+            expect(page).to have_no_selector "tr#li_#{li1.id}"
+            expect(page).to have_selector "tr#li_#{li11.id}"
+            expect(o1.reload.state).to eq("complete")
+          end
         end
       end
     end
@@ -1051,5 +1110,15 @@ describe '
   def displays_default_orders
     expect(page).to have_selector "tr#li_#{li1.id}"
     expect(page).to have_selector "tr#li_#{li2.id}"
+  end
+
+  def expect_line_items_results(line_items, excluded_line_items)
+    expect(page).to have_text "Loading orders"
+    line_items.each do |li|
+      expect(page).to have_selector "tr#li_#{li.id}"
+    end
+    excluded_line_items.each do |li|
+      expect(page).to have_no_selector "tr#li_#{li.id}"
+    end
   end
 end
